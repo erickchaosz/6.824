@@ -4,7 +4,10 @@ import "fmt"
 
 // Calls worker to do task
 // If success, register worker back to be used for next task
-func (mr *Master) doTask(phase jobPhase, task int, nios int, worker string, doneQueue chan int) {
+func (mr *Master) doTask(phase jobPhase, task int, nios int, worker string,
+	taskQueue chan int,
+	doneQueue chan int,
+) {
 	args := new(DoTaskArgs)
 	args.JobName = mr.jobName
 	args.File = mr.files[task]
@@ -14,6 +17,7 @@ func (mr *Master) doTask(phase jobPhase, task int, nios int, worker string, done
 	ok := call(worker, "Worker.DoTask", args, new(struct{}))
 	if ok == false {
 		fmt.Printf("Master: Worker DoTask RPC %d failed\n", task)
+		taskQueue <- task
 	} else {
 		doneQueue <- task
 		mr.registerChannel <- worker
@@ -51,15 +55,10 @@ func (mr *Master) schedule(phase jobPhase) {
 	doneQueue := make(chan int, ntasks)
 
 	go func() {
-		for {
-			task, ok := <-taskQueue
-			if ok == false {
-				return
-			}
-
+		for task := range taskQueue {
 			worker := <-mr.registerChannel
 
-			go mr.doTask(phase, task, nios, worker, doneQueue)
+			go mr.doTask(phase, task, nios, worker, taskQueue, doneQueue)
 		}
 	}()
 
